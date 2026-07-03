@@ -1,8 +1,10 @@
 {
-  "day": 0,
-  "last_update_id": 0,
-  "acknowledged": true,
-  "seen_quote_ids": [],
-  "last_message_id": null,
-  "last_chat_id": null
+  "day": 1,
+  "last_update_id": 207640506,
+  "acknowledged": false,
+  "seen_quote_ids": [
+    1210
+  ],
+  "last_message_id": 5,
+  "last_chat_id": "223481056"
 }
