@@ -6,36 +6,40 @@ Run once per day at 8:30am SGT by
 .github/workflows/daily-quote.yml
 """
 
+import json
 import os
+import random
 
 import anthropic
-import requests
 
 from telegram_utils import check_acknowledgment, load_state, save_state, send_message
 
 TOTAL_DAYS = 365
-QUOTES_API = "https://dummyjson.com/quotes/random"
+LEADER_QUOTES_FILE = "leader_quotes.json"
 
 
-def fetch_quote(seen_ids, max_attempts=10):
-    """Fetch a real, sourced quote with a genuine author from a public
-    quotes database — avoids the fabrication/misattribution risk of asking
-    a model to invent both a quote and who said it.
+def load_quote_pool():
+    with open(LEADER_QUOTES_FILE) as f:
+        return json.load(f)
 
-    Returns (quote_text, author, quote_id, seen_ids_reset: bool)
+
+def fetch_quote(seen_ids):
+    """Pick a quote from the curated world-leaders pool that hasn't been
+    sent yet. Once the whole pool has been used, resets and allows repeats
+    rather than failing.
+
+    Returns (quote_text, author, context, quote_id, seen_ids_reset: bool)
     """
-    last = None
-    for _ in range(max_attempts):
-        resp = requests.get(QUOTES_API, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        last = data
-        if data["id"] not in seen_ids:
-            return data["quote"], data["author"], data["id"], False
+    pool = load_quote_pool()
+    unseen = [q for q in pool if q["id"] not in seen_ids]
 
-    # Pool exhausted (we've seen most/all available quotes) — reset and
-    # allow repeats to start again rather than looping forever.
-    return last["quote"], last["author"], last["id"], True
+    was_reset = False
+    if not unseen:
+        unseen = pool
+        was_reset = True
+
+    q = random.choice(unseen)
+    return q["quote"], q["author"], q.get("context", ""), q["id"], was_reset
 
 
 def generate_story(client, day):
@@ -76,12 +80,13 @@ def main():
         client = anthropic.Anthropic(api_key=api_key)
         content = generate_story(client, next_day)
     else:
-        quote, author, quote_id, was_reset = fetch_quote(state["seen_quote_ids"])
+        quote, author, context, quote_id, was_reset = fetch_quote(state["seen_quote_ids"])
         if was_reset:
             state["seen_quote_ids"] = [quote_id]
         else:
             state["seen_quote_ids"].append(quote_id)
-        content = f'"{quote}"\n\n— {author}'
+        attribution = f"— {author}, {context}" if context else f"— {author}"
+        content = f'"{quote}"\n\n{attribution}'
 
     note = ""
     if not was_acknowledged and next_day > 1:
@@ -99,3 +104,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

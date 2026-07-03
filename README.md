@@ -33,6 +33,7 @@ third day), so total cost for the year is a couple of dollars at most.
    poll_ack.py
    telegram_utils.py
    state.json
+   leader_quotes.json
    .github/workflows/daily-quote.yml
    .github/workflows/check-reminder.yml
    .github/workflows/poll-ack.yml
@@ -92,20 +93,25 @@ that point you can delete the repo or disable all three workflows
 
 ## Where the content comes from
 
-- **Quotes** (roughly 2 of every 3 days): fetched live from
-  [DummyJSON's quotes API](https://dummyjson.com/docs/quotes), a free,
-  no-key public database of real quotes with genuine attributions. The
-  script tracks which quote IDs you've already seen (`seen_quote_ids` in
-  `state.json`) to avoid repeats — though since the database has roughly a
-  few hundred quotes and the series runs 365 days, some repetition later in
-  the year is expected once the pool cycles through.
+- **Quotes** (roughly 2 of every 3 days): drawn from `leader_quotes.json`, a
+  curated, static list of quotes from actual heads of state/government —
+  presidents, prime ministers, monarchs — bundled directly in the repo
+  rather than pulled from a live third-party API. This was a deliberate
+  choice: a general-purpose quotes API has no reliable "world leaders"
+  filter, and asking Claude to recall a leader's quote from memory
+  reintroduces the exact misattribution risk this design avoids elsewhere.
+  The script tracks which quote IDs you've seen (`seen_quote_ids` in
+  `state.json`) and avoids repeats until the pool (currently 40 quotes) is
+  exhausted, then cycles again.
+  **Caveat**: this list was written from general knowledge, not
+  independently fact-checked line by line. One entry was caught and fixed
+  during creation (a movie line that had been mistakenly attributed to
+  Churchill), which is a useful reminder that even a "curated" list from a
+  model isn't infallible — if a specific quote matters for something
+  important, worth a quick independent check.
 - **Short stories** (roughly 1 of every 3 days): generated fresh by Claude
   (`claude-sonnet-4-6`) as original creative writing — no attribution
   claims involved, so no misattribution risk.
-
-If DummyJSON is ever unreachable on a given day, that run will fail (the
-`requests.get` call will raise an error) rather than silently sending
-nothing — you'd see it as a failed run in the Actions tab.
 
 ## Notes
 
