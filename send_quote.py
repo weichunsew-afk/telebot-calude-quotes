@@ -6,44 +6,54 @@ Run once per day at 8:30am SGT by
 .github/workflows/daily-quote.yml
 """
 
+import os
+
 import anthropic
+import requests
 
 from telegram_utils import check_acknowledgment, load_state, save_state, send_message
 
 TOTAL_DAYS = 365
+QUOTES_API = "https://dummyjson.com/quotes/random"
 
 
-def generate_content(client, day):
-    if day % 3 == 0:
-        kind = "a short inspirational story, 150-200 words"
-        instruction = (
-            f"Write {kind}. This is day {day} of a 365-day daily series, so it "
-            "should feel fresh and avoid cliche tropes. "
-            "Return only the story itself, no preamble or labels."
-        )
-    else:
-        kind = "a single original inspirational line, 1-2 sentences"
-        instruction = (
-            f"Write {kind}. This is day {day} of a 365-day daily series, so it "
-            "should feel fresh and avoid the most overused/cliche phrasing. "
-            "This must be an ORIGINAL line you compose yourself — do not "
-            "attribute it to any real person, living or dead, and do not "
-            "imply it is a known/existing quote. Write it as a standalone "
-            "thought with no attribution at all. "
-            "Return only the line itself, no preamble, labels, or quotation marks."
-        )
+def fetch_quote(seen_ids, max_attempts=10):
+    """Fetch a real, sourced quote with a genuine author from a public
+    quotes database — avoids the fabrication/misattribution risk of asking
+    a model to invent both a quote and who said it.
 
+    Returns (quote_text, author, quote_id, seen_ids_reset: bool)
+    """
+    last = None
+    for _ in range(max_attempts):
+        resp = requests.get(QUOTES_API, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        last = data
+        if data["id"] not in seen_ids:
+            return data["quote"], data["author"], data["id"], False
+
+    # Pool exhausted (we've seen most/all available quotes) — reset and
+    # allow repeats to start again rather than looping forever.
+    return last["quote"], last["author"], last["id"], True
+
+
+def generate_story(client, day):
+    prompt = (
+        "Write a short inspirational story, 150-200 words. "
+        f"This is day {day} of a 365-day daily series, so it should feel "
+        "fresh and avoid cliche tropes. Return only the story itself, no "
+        "preamble or labels."
+    )
     msg = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=400,
-        messages=[{"role": "user", "content": instruction}],
+        messages=[{"role": "user", "content": prompt}],
     )
     return msg.content[0].text.strip()
 
 
 def main():
-    import os
-
     bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
     api_key = os.environ["ANTHROPIC_API_KEY"]
@@ -55,23 +65,34 @@ def main():
         print("Series complete — you can disable the workflow schedules now.")
         return
 
-    # Catch any late ack that came in after the reminder check but before now.
+    # Catch any late ack that came in after the last poll but before now.
     found_ack, new_last_id = check_acknowledgment(bot_token, state["last_update_id"])
     state["last_update_id"] = new_last_id
     was_acknowledged = state["acknowledged"] or found_ack
 
     next_day = state["day"] + 1
-    client = anthropic.Anthropic(api_key=api_key)
-    content = generate_content(client, next_day)
+
+    if next_day % 3 == 0:
+        client = anthropic.Anthropic(api_key=api_key)
+        content = generate_story(client, next_day)
+    else:
+        quote, author, quote_id, was_reset = fetch_quote(state["seen_quote_ids"])
+        if was_reset:
+            state["seen_quote_ids"] = [quote_id]
+        else:
+            state["seen_quote_ids"].append(quote_id)
+        content = f'"{quote}"\n\n— {author}'
 
     note = ""
     if not was_acknowledged and next_day > 1:
         note = "(Yesterday's message went unacknowledged — starting fresh today.)\n\n"
 
-    send_message(bot_token, chat_id, f"Day {next_day}/{TOTAL_DAYS}\n\n{note}{content}")
+    message_id = send_message(bot_token, chat_id, f"Day {next_day}/{TOTAL_DAYS}\n\n{note}{content}")
 
     state["day"] = next_day
     state["acknowledged"] = False  # this new message is now the pending one
+    state["last_message_id"] = message_id
+    state["last_chat_id"] = chat_id
     save_state(state)
     print(f"Sent day {next_day}. Previous day acknowledged: {was_acknowledged}")
 

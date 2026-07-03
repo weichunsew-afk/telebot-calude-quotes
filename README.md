@@ -1,8 +1,9 @@
 # Daily Quote/Story Telegram Bot — Setup
 
-Sends you an inspirational quote or short story every day at 8:30am SGT for
-365 days, via Telegram, with a "read" acknowledgment button. Runs entirely
-on GitHub Actions — no server of your own required.
+Sends you a real, sourced quote or a Claude-generated short story every day
+at 8:30am SGT for 365 days, via Telegram, with a "read" acknowledgment
+button that gives near-instant feedback when tapped. Runs entirely on
+GitHub Actions — no server of your own required.
 
 ## 1. Create a Telegram bot
 
@@ -17,20 +18,28 @@ on GitHub Actions — no server of your own required.
 ## 2. Get an Anthropic API key
 
 Create one at [console.anthropic.com](https://console.anthropic.com) if you
-don't already have one. This is a separate key from claude.ai — it's billed
-per use, but 365 short generations on Sonnet will cost a few dollars total
-for the whole year at most.
+don't already have one. This is separate from your claude.ai login — it's
+billed per use, but this only calls the API on story days (roughly every
+third day), so total cost for the year is a couple of dollars at most.
 
 ## 3. Create the GitHub repo
 
 1. Create a new **private** GitHub repository.
-2. Upload these files, keeping the folder structure:
-   - `send_quote.py`
-   - `check_reminder.py`
-   - `telegram_utils.py`
-   - `state.json`
-   - `.github/workflows/daily-quote.yml`
-   - `.github/workflows/check-reminder.yml`
+2. Upload these files, keeping the folder structure exactly:
+   ```
+   README.md
+   send_quote.py
+   check_reminder.py
+   poll_ack.py
+   telegram_utils.py
+   state.json
+   .github/workflows/daily-quote.yml
+   .github/workflows/check-reminder.yml
+   .github/workflows/poll-ack.yml
+   ```
+   The two `.yml` files must be created with the path typed directly into
+   the filename (e.g. `.github/workflows/daily-quote.yml`) — GitHub creates
+   the folders automatically when it sees the slashes.
 
 ## 4. Add your secrets
 
@@ -43,53 +52,73 @@ Add three secrets:
 | `TELEGRAM_CHAT_ID` | the chat ID from step 1 |
 | `ANTHROPIC_API_KEY` | your Anthropic API key from step 2 |
 
-Both workflows read from the same repo secrets, so you only need to add these once. `check-reminder.yml` doesn't use `ANTHROPIC_API_KEY` (it doesn't generate content), but there's no harm in it being set.
+All three workflows read from the same repo secrets — add these once.
+`check-reminder.yml` and `poll-ack.yml` don't use `ANTHROPIC_API_KEY`, but
+there's no harm in it being set for all of them.
 
 ## 5. Test it
 
-Go to the **Actions** tab. You'll see two workflows: **Daily Quote** and
-**Check Reminder**. Run **Daily Quote** manually first (via **Run workflow**,
-using the `workflow_dispatch` trigger) — you should get a Telegram message
-within a minute or two. Then, without tapping the "✅ I've read this" button,
-manually run **Check Reminder** — you should get a nudge message.
+Go to the **Actions** tab. You'll see three workflows: **Daily Quote**,
+**Check Reminder**, and **Poll Acknowledgment**.
+
+1. Run **Daily Quote** manually (**Run workflow** button). You should get a
+   Telegram message with a "✅ I've read this" button within a minute or two.
+2. Tap the button in Telegram.
+3. Run **Poll Acknowledgment** manually. You should get a small confirmation
+   popup on your phone, and the button should disappear from the message.
+4. To test the reminder path: run **Daily Quote** again, this time *don't*
+   tap the button, and run **Check Reminder** manually — you should get a
+   nudge message.
 
 ## 6. Let it run
 
-Once both manual tests work, do nothing else. Two schedules fire automatically
-every day:
+Once the manual tests work, do nothing else. Three schedules fire automatically:
 
-- **08:30 SGT (`cron: '30 0 * * *'`)** — `send_quote.py` runs. It checks for
-  any acknowledgment that came in overnight, generates a new quote or short
-  story, sends it with a fresh "✅ I've read this" button, and marks that
-  message as the new pending one.
-- **09:30 SGT (`cron: '30 1 * * *'`)** — `check_reminder.py` runs, one hour
-  later. If you haven't tapped the button yet, it checks Telegram once more
-  and, if still unacknowledged, sends a single reminder nudge. If you did
-  acknowledge it, this step does nothing.
+- **08:30 SGT daily** — `send_quote.py`. Every third day it generates an
+  original short story via Claude; other days it fetches a real, sourced
+  quote (with genuine author) from a public quotes database. Sends it with
+  a fresh "✅ I've read this" button.
+- **09:30 SGT daily** — `check_reminder.py`, one hour later. If you haven't
+  acknowledged yet, sends a single nudge. Won't repeat beyond that.
+- **Every 15 minutes** — `poll_ack.py`. This is what makes tapping the
+  button feel instant: as soon as it detects a tap, it sends a confirmation
+  popup to your phone and removes the button from the message so it can't
+  be tapped again. Most runs are a fast no-op (nothing pending), so this
+  adds negligible cost.
 
-Any acknowledgment — whether it happens right away, after the 9:30 reminder,
-or any time before the next day's 8:30 send — is picked up the next time
-either script runs, since both poll Telegram's update history rather than
-listening live.
+After day 365, `send_quote.py` sends a completion message and stops. At
+that point you can delete the repo or disable all three workflows
+(**Actions → [workflow name] → ⋯ → Disable workflow**).
 
-After day 365, `send_quote.py` sends a completion message and stops sending
-new content (the reminder workflow will also stop nudging, since there's no
-new pending message). At that point you can delete the repo or disable both
-workflows (**Actions → [workflow name] → ⋯ → Disable workflow**).
+## Where the content comes from
+
+- **Quotes** (roughly 2 of every 3 days): fetched live from
+  [DummyJSON's quotes API](https://dummyjson.com/docs/quotes), a free,
+  no-key public database of real quotes with genuine attributions. The
+  script tracks which quote IDs you've already seen (`seen_quote_ids` in
+  `state.json`) to avoid repeats — though since the database has roughly a
+  few hundred quotes and the series runs 365 days, some repetition later in
+  the year is expected once the pool cycles through.
+- **Short stories** (roughly 1 of every 3 days): generated fresh by Claude
+  (`claude-sonnet-4-6`) as original creative writing — no attribution
+  claims involved, so no misattribution risk.
+
+If DummyJSON is ever unreachable on a given day, that run will fail (the
+`requests.get` call will raise an error) rather than silently sending
+nothing — you'd see it as a failed run in the Actions tab.
 
 ## Notes
 
-- GitHub Actions' free tier includes 2,000 minutes/month for private repos —
-  these jobs take well under a minute a day combined, so cost isn't a concern.
-- Only one reminder is sent per day, one hour after the message. It won't
-  nag you repeatedly.
-- **Quotes are original, not sourced.** Every third day you get a short
-  story; the other days you get an original line composed by Claude for
-  that day, with no attribution to any real person. Earlier versions asked
-  for a quote plus "who said it," which risked fabricated or misattributed
-  sourcing — that's been removed. If you'd rather pull from a verified
-  quotes database instead (e.g. an API of real, sourced quotes) and reserve
-  generation for the stories only, that's a bigger change but doable.
+- GitHub Actions' free tier includes 2,000 minutes/month for private repos.
+  Even with three schedules (including a 15-minute poll), this stays well
+  under that limit — the poll job is a fast no-op almost every time it runs.
+- **Commit race conditions**: with three workflows writing to `state.json`
+  on different schedules, occasional push conflicts are expected (two jobs
+  finishing around the same time). Each workflow commits its local change
+  first, then pulls with rebase and pushes, retrying up to 5 times with a
+  short delay — this handles the normal case. If you ever see a workflow
+  fail on the commit step after all retries, it means two jobs collided
+  very close together; just re-run the failed one.
 - If you'd rather the bot *pause* and stop sending new content entirely
   until you acknowledge (a hard stop instead of "starting fresh anyway"),
   that's a small change to `send_quote.py` — happy to adjust it if you want

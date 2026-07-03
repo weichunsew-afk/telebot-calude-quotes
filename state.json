@@ -1,5 +1,8 @@
 {
   "day": 0,
   "last_update_id": 0,
-  "acknowledged": true
+  "acknowledged": true,
+  "seen_quote_ids": [],
+  "last_message_id": null,
+  "last_chat_id": null
 }
