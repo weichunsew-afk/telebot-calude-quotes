@@ -1,0 +1,36 @@
+name: Check Reminder
+
+on:
+  schedule:
+    # 01:30 UTC = 09:30 SGT — 1 hour after the daily send at 08:30 SGT
+    - cron: '30 1 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install requests
+
+      - run: python check_reminder.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Commit updated state
+        run: |
+          git config user.name "daily-quote-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git pull --rebase
+          git add state.json
+          git commit -m "Update state (reminder check)" || echo "No changes to commit"
+          git push
