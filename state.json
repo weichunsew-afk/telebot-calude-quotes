@@ -1,11 +1,11 @@
 {
-  "day": 2,
+  "day": 3,
   "last_update_id": 207640512,
-  "acknowledged": true,
+  "acknowledged": false,
   "seen_quote_ids": [
     1210,
     290
   ],
-  "last_message_id": 6,
+  "last_message_id": 8,
   "last_chat_id": "223481056"
 }
