@@ -1,5 +1,5 @@
 {
-  "day": 21,
+  "day": 22,
   "last_update_id": 207640512,
   "acknowledged": false,
   "seen_quote_ids": [
@@ -16,8 +16,9 @@
     7,
     39,
     14,
-    28
+    28,
+    3
   ],
-  "last_message_id": 43,
+  "last_message_id": 45,
   "last_chat_id": "223481056"
 }
