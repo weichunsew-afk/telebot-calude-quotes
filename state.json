@@ -1,10 +1,11 @@
 {
-  "day": 64,
+  "day": 65,
   "last_update_id": 207640512,
   "acknowledged": false,
   "seen_quote_ids": [
-    9
+    9,
+    17
   ],
-  "last_message_id": 129,
+  "last_message_id": 131,
   "last_chat_id": "223481056"
 }
